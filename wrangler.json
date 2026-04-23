@@ -1,0 +1,9 @@
+{
+  "name": "anifinix-cdn",
+  "main": "index.js",
+  "compatibility_date": "2024-04-01",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  }
+}
