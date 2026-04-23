@@ -4,35 +4,36 @@ export default {
     const url = new URL(request.url);
     const targetUrl = RENDER_URL + url.pathname + url.search;
 
-    // 1. Request se Cookies aur Auth hata do (BYPASS fix karne ke liye)
-    const newRequest = new Request(targetUrl, {
-      method: request.method,
-      headers: new Headers(request.headers),
-    });
-    newRequest.headers.delete("Cookie");
-    newRequest.headers.delete("Authorization");
-
+    // 1. Agar .ts file hai toh usse "Static Asset" bana do
     if (url.pathname.endsWith('.ts')) {
-      let response = await fetch(newRequest, {
+      const cache = caches.default;
+      let response = await cache.match(request);
+
+      // Agar cache mein pehle se hai toh wahin se dedo (HIT)
+      if (response) {
+        return response;
+      }
+
+      // Agar cache mein nahi hai, toh Render se mangao
+      response = await fetch(targetUrl, {
         cf: {
           cacheEverything: true,
-          cacheTtl: 86400,
-          edgeCacheTtl: 86400,
-        },
+          cacheTtl: 86400, // 24 Ghante
+        }
       });
 
-      // 2. Response Headers ko zabardasti "Public" karo
-      let newHeaders = new Headers(response.headers);
-      newHeaders.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
-      newHeaders.delete("Set-Cookie"); // Kisi bhi tarah ki cookie hata do
+      // Response ko "Public" aur "Cacheable" banao (BYPASS hatane ke liye)
+      response = new Response(response.body, response);
+      response.headers.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
+      response.headers.delete("Set-Cookie");
 
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: newHeaders,
-      });
+      // Is naye response ko Cloudflare ke cache mein save karo
+      ctx.waitUntil(cache.put(request, response.clone()));
+
+      return response;
     }
 
-    return fetch(newRequest);
+    // 2. .m3u8 ke liye normal fetch
+    return fetch(targetUrl);
   },
 };
