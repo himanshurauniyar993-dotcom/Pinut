@@ -1,32 +1,30 @@
 export default {
   async fetch(request, env, ctx) {
-    // 1. Apna Render ka URL yahan check kar lo
     const RENDER_URL = "https://anifinix-relay.onrender.com"; 
-
     const url = new URL(request.url);
     const targetUrl = RENDER_URL + url.pathname + url.search;
 
-    // 2. Sirf Video Chunks (.ts files) ke liye "Airforce" Logic
+    // 1. Request se Cookies aur Auth hata do (BYPASS fix karne ke liye)
+    const newRequest = new Request(targetUrl, {
+      method: request.method,
+      headers: new Headers(request.headers),
+    });
+    newRequest.headers.delete("Cookie");
+    newRequest.headers.delete("Authorization");
+
     if (url.pathname.endsWith('.ts')) {
-      let response = await fetch(targetUrl, {
+      let response = await fetch(newRequest, {
         cf: {
           cacheEverything: true,
-          cacheTtl: 86400,       // 24 ghante Cloudflare storage mein
-          edgeCacheTtl: 86400,   // Zabardasti cache karne ka command
+          cacheTtl: 86400,
+          edgeCacheTtl: 86400,
         },
       });
 
-      // 3. Headers Overwrite (EXPIRED ko HIT karne ke liye)
+      // 2. Response Headers ko zabardasti "Public" karo
       let newHeaders = new Headers(response.headers);
-      
-      // Render ke purane cache rules ko delete karo
-      newHeaders.delete("Cache-Control");
-      newHeaders.delete("Expires");
-      newHeaders.delete("Pragma");
-
-      // Naye rules dalo jo player aur Cloudflare ko "HIT" dikhayein
-      newHeaders.set("Cache-Control", "public, max-header-bytes=86400, max-age=86400, s-maxage=86400, immutable");
-      newHeaders.set("Access-Control-Allow-Origin", "*"); // Sab jagah chalne ke liye
+      newHeaders.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
+      newHeaders.delete("Set-Cookie"); // Kisi bhi tarah ki cookie hata do
 
       return new Response(response.body, {
         status: response.status,
@@ -35,11 +33,6 @@ export default {
       });
     }
 
-    // 4. Playlist (.m3u8) ke liye direct fetch (No Cache taaki live update ho)
-    return fetch(targetUrl, {
-        headers: {
-            "Access-Control-Allow-Origin": "*"
-        }
-    });
+    return fetch(newRequest);
   },
 };
