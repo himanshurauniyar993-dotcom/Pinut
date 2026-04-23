@@ -4,36 +4,50 @@ export default {
     const url = new URL(request.url);
     const targetUrl = RENDER_URL + url.pathname + url.search;
 
-    // 1. Agar .ts file hai toh usse "Static Asset" bana do
+    // 1. Ek dum saaf (clean) request banao bina kisi purani cookie ke
+    const cleanRequest = new Request(targetUrl, {
+      method: "GET",
+      headers: {
+        "Accept": "*/*",
+        "User-Agent": "Cloudflare-Worker"
+      }
+    });
+
     if (url.pathname.endsWith('.ts')) {
+      // Cloudflare ka default cache use karo
       const cache = caches.default;
       let response = await cache.match(request);
 
-      // Agar cache mein pehle se hai toh wahin se dedo (HIT)
       if (response) {
-        return response;
+        return response; // Yahan se HIT milega
       }
 
-      // Agar cache mein nahi hai, toh Render se mangao
-      response = await fetch(targetUrl, {
+      // Render se fresh maal mangao
+      let originalResponse = await fetch(cleanRequest, {
         cf: {
           cacheEverything: true,
-          cacheTtl: 86400, // 24 Ghante
+          cacheTtl: 86400,
         }
       });
 
-      // Response ko "Public" aur "Cacheable" banao (BYPASS hatane ke liye)
-      response = new Response(response.body, response);
-      response.headers.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
-      response.headers.delete("Set-Cookie");
+      // 2. Response ko puri tarah "Public" banao
+      let newHeaders = new Headers();
+      newHeaders.set("Content-Type", "video/mp2t");
+      newHeaders.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
+      newHeaders.set("Access-Control-Allow-Origin", "*");
+      newHeaders.set("X-Cache-Status", "Forced-by-Anifinix");
 
-      // Is naye response ko Cloudflare ke cache mein save karo
-      ctx.waitUntil(cache.put(request, response.clone()));
+      let forcedResponse = new Response(originalResponse.body, {
+        status: 200,
+        headers: newHeaders
+      });
 
-      return response;
+      // Cache mein store karo
+      ctx.waitUntil(cache.put(request, forcedResponse.clone()));
+
+      return forcedResponse;
     }
 
-    // 2. .m3u8 ke liye normal fetch
-    return fetch(targetUrl);
-  },
+    return fetch(cleanRequest);
+  }
 };
