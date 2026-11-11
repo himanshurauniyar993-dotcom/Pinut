@@ -4,50 +4,53 @@ export default {
     const url = new URL(request.url);
     const targetUrl = RENDER_URL + url.pathname + url.search;
 
-    // 1. Ek dum saaf (clean) request banao bina kisi purani cookie ke
     const cleanRequest = new Request(targetUrl, {
-      method: "GET",
+      method: request.method,
       headers: {
         "Accept": "*/*",
-        "User-Agent": "Cloudflare-Worker"
+        "User-Agent": "Cloudflare-Worker-Streamer"
       }
     });
 
+    // अगर रिक्वेस्ट .ts फाइल (वीडियो चंक) की है, तो Cloudflare का कैच इस्तेमाल करो
     if (url.pathname.endsWith('.ts')) {
-      // Cloudflare ka default cache use karo
       const cache = caches.default;
       let response = await cache.match(request);
 
       if (response) {
-        return response; // Yahan se HIT milega
+        return response; // सुपर फास्ट कैश हिट
       }
 
-      // Render se fresh maal mangao
-      let originalResponse = await fetch(cleanRequest, {
-        cf: {
-          cacheEverything: true,
-          cacheTtl: 86400,
-        }
-      });
+      let originalResponse = await fetch(cleanRequest);
 
-      // 2. Response ko puri tarah "Public" banao
-      let newHeaders = new Headers();
-      newHeaders.set("Content-Type", "video/mp2t");
+      let newHeaders = new Headers(originalResponse.headers);
       newHeaders.set("Cache-Control", "public, max-age=86400, s-maxage=86400, immutable");
       newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("X-Cache-Status", "Forced-by-Anifinix");
 
-      let forcedResponse = new Response(originalResponse.body, {
-        status: 200,
+      let cachedResponse = new Response(originalResponse.body, {
+        status: originalResponse.status,
         headers: newHeaders
       });
 
-      // Cache mein store karo
-      ctx.waitUntil(cache.put(request, forcedResponse.clone()));
-
-      return forcedResponse;
+      ctx.waitUntil(cache.put(request, cachedResponse.clone()));
+      return cachedResponse;
     }
 
-    return fetch(cleanRequest);
+    // .m3u8 या अन्य फाइलों के लिए सीधा और बिना रुके स्ट्रीम पाइप करो (Zero-Lag Proxy)
+    try {
+      const response = await fetch(cleanRequest);
+      
+      const newResponse = new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      });
+
+      newResponse.headers.set("Access-Control-Allow-Origin", "*");
+      return newResponse;
+
+    } catch (e) {
+      return new Response("Relay Fetch Error: " + e.message, { status: 500 });
+    }
   }
 };
