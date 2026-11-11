@@ -1,6 +1,6 @@
 export default {
   async fetch(request, env, ctx) {
-    const RENDER_URL = "https://anifinix-relay.onrender.com"; 
+    const RENDER_URL = "https://jpingovernmen-anifinix.hf.space"; 
     const url = new URL(request.url);
     const targetUrl = RENDER_URL + url.pathname + url.search;
 
